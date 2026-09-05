@@ -1,3 +1,5 @@
+import os
+
 import aiosqlite
 import config
 
@@ -13,6 +15,13 @@ CREATE TABLE IF NOT EXISTS expenses (
 
 
 async def init_db():
+    # Папка под базу могла не попасть в репозиторий (git не хранит пустые
+    # папки) — создаём её сами, если её ещё нет, иначе sqlite не сможет
+    # открыть файл ("unable to open database file").
+    db_dir = os.path.dirname(config.DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+
     async with aiosqlite.connect(config.DB_PATH) as db:
         await db.execute(CREATE_EXPENSES_TABLE)
         await db.commit()
