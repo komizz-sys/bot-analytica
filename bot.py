@@ -4,13 +4,13 @@ import logging
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Message
 
 import config
-from database import init_db, add_expense, get_expenses_sum, get_recent_expenses
+from database import init_db, add_expense, get_expenses_sum, get_recent_expenses, delete_expense
 from keyboards import main_menu_kb
 from states import ExpenseStates
 from services.shop_client import get_revenue, ShopApiError
@@ -169,7 +169,23 @@ async def main():
         lines = ["<b>Последние 10 расходов:</b>\n"]
         for r in rows:
             lines.append(f"#{r['id']} — {format_uzs(r['amount_uzs'])} — {r['description']} ({r['created_at']})")
+        lines.append("\nЧтобы удалить расход, напиши: <code>/del ID</code> (например: /del 3)")
         await message.answer("\n".join(lines))
+
+    @dp.message(Command("del"))
+    async def cmd_delete_expense(message: Message, command: CommandObject):
+        if not is_admin(message.from_user.id):
+            return
+        args = (command.args or "").strip()
+        if not args.isdigit():
+            await message.answer("Укажи номер расхода: /del 3")
+            return
+        expense_id = int(args)
+        ok = await delete_expense(expense_id)
+        if ok:
+            await message.answer(f"🗑 Расход #{expense_id} удалён.")
+        else:
+            await message.answer(f"Расход #{expense_id} не найден — проверь номер в «История расходов».")
 
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
