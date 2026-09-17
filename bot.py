@@ -59,8 +59,19 @@ async def build_report(period: str) -> str:
 
     income_by_cat = revenue["income_by_category"]
     income_total = revenue["income_total"]
-    rent_auto_cost = revenue.get("rent_auto_cost_uzs", 0)
-    total_cost = rent_auto_cost + manual_expenses
+
+    # Расход теперь приходит из магазина посчитанным по категориям: звёзды и
+    # подарки — по закупочной цене, премиум — по цене тарифа, аренда — по
+    # реально списанным с кошелька TON. Раньше сюда попадала только аренда,
+    # а всё остальное приходилось вносить руками — отсюда и брались минусы
+    # в прибыли на сотни тысяч при обороте в десятки.
+    auto_cost_by_cat = revenue.get("auto_cost_by_category") or {}
+    if not auto_cost_by_cat and revenue.get("rent_auto_cost_uzs"):
+        # Магазин ещё старой версии — показываем хотя бы аренду, как прежде
+        auto_cost_by_cat = {"nft_rent": revenue["rent_auto_cost_uzs"]}
+
+    auto_cost_total = sum(auto_cost_by_cat.values())
+    total_cost = auto_cost_total + manual_expenses
     profit = income_total - total_cost
 
     cat_names = {
@@ -71,27 +82,52 @@ async def build_report(period: str) -> str:
     }
     lines = [f"<b>{PERIOD_TITLES[period]}</b>\n"]
     lines.append(f"Заказов оплачено: <b>{revenue['orders_count']}</b>\n")
-    lines.append("<b>Доход по категориям:</b>")
+
+    # Доход, расход и прибыль — одной строкой на категорию: так сразу видно,
+    # что реально зарабатывает, а что продаётся в ноль.
+    lines.append("<b>По категориям:</b>")
     for cat, name in cat_names.items():
-        amount = income_by_cat.get(cat, 0)
-        if amount:
-            lines.append(f"  {name}: {format_uzs(amount)}")
+        income = income_by_cat.get(cat, 0)
+        if not income:
+            continue
+        cost = auto_cost_by_cat.get(cat, 0)
+        margin = income - cost
+        lines.append(f"  {name}")
+        lines.append(f"     доход {format_uzs(income)} − расход {format_uzs(cost)}")
+        lines.append(f"     💵 заработано: <b>{format_uzs(margin)}</b>")
+
     lines.append(f"\n💰 <b>Доход всего:</b> {format_uzs(income_total)}")
 
-    lines.append(f"\n<b>Расход:</b>")
-    if rent_auto_cost:
-        lines.append(f"  🖼 Аренда (авто, MarketApp): {format_uzs(rent_auto_cost)}")
-    lines.append(f"  💸 Внесено вручную (звёзды/подарки/etc): {format_uzs(manual_expenses)}")
+    lines.append("\n<b>Расход:</b>")
+    lines.append(f"  🤖 Посчитано автоматически: {format_uzs(auto_cost_total)}")
+    if manual_expenses:
+        lines.append(f"  💸 Внесено вручную: {format_uzs(manual_expenses)}")
     lines.append(f"📉 <b>Расход всего:</b> {format_uzs(total_cost)}")
 
     profit_emoji = "✅" if profit >= 0 else "❌"
     lines.append(f"\n{profit_emoji} <b>Прибыль: {format_uzs(profit)}</b>")
+    if income_total:
+        lines.append(f"<i>Маржа: {profit / income_total * 100:.1f}%</i>")
 
-    if rent_auto_cost:
-        lines.append(
-            "\n<i>Расход по аренде — приблизительный: считается по текущему курсу TON, "
-            "не по курсу на момент самой аренды.</i>"
+    notes = []
+    if auto_cost_by_cat.get("nft_rent"):
+        notes.append(
+            "Аренда считается по текущему курсу TON, не по курсу на момент сделки."
         )
+    unknown = revenue.get("premium_unknown") or []
+    if unknown:
+        notes.append(
+            "Не указана закупка для тарифов: " + ", ".join(unknown[:3]) +
+            ". Пропиши cost_uzs в data/prices.json магазина."
+        )
+    if manual_expenses:
+        notes.append(
+            "Ручные расходы складываются с автоматическими — если вносил то, "
+            "что бот уже считает сам (звёзды, премиум, подарки), удали их "
+            "через «История расходов», иначе расход задваивается."
+        )
+    if notes:
+        lines.append("\n<i>" + " ".join(notes) + "</i>")
 
     return "\n".join(lines)
 

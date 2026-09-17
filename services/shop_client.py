@@ -9,8 +9,17 @@ class ShopApiError(Exception):
 async def get_revenue(period: str) -> dict:
     """
     period: "today" | "week" | "month" | "all"
-    -> {"income_by_category": {...}, "income_total": int, "orders_count": int,
-        "rent_auto_cost_uzs": int, "period": str}
+    -> {
+        "income_by_category": {...}, "income_total": int, "orders_count": int,
+        "auto_cost_by_category": {...},  # расход, посчитанный магазином
+        "auto_cost_total": int,
+        "rent_auto_cost_uzs": int,       # осталось для совместимости
+        "premium_unknown": [str],        # тарифы без закупочной цены в прайсе
+        "period": str,
+    }
+
+    Закупочные цены живут в МАГАЗИНЕ (config + data/prices.json), а не здесь:
+    там же лежат и цены продажи, так что менять их в одном месте.
     """
     if not config.SHOP_API_URL or not config.SHOP_API_SECRET:
         raise ShopApiError(
